@@ -64,8 +64,8 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
         // Fallback to default values if config.json is not found or invalid
         currentConfig = {
             REQUIRED_API_KEY: "123456",
-            SERVER_PORT: 3000,
-            HOST: 'localhost',
+            SERVER_PORT: 10000,
+            HOST: '0.0.0.0',
             MODEL_PROVIDER: MODEL_PROVIDER.GEMINI_CLI,
             OPENAI_API_KEY: null,
             OPENAI_BASE_URL: null,
@@ -222,16 +222,16 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
                 currentConfig.KIRO_OAUTH_CREDS_FILE_PATH = args[i + 1];
                 i++;
             } else {
-               console.warn(`[Config Warning] --kiro-oauth-creds-file flag requires a value.`);
-           }
-       } else if (args[i] === '--qwen-oauth-creds-file') {
-           if (i + 1 < args.length) {
-               currentConfig.QWEN_OAUTH_CREDS_FILE_PATH = args[i + 1];
-               i++;
-           } else {
-               console.warn(`[Config Warning] --qwen-oauth-creds-file flag requires a value.`);
-           }
-       } else if (args[i] === '--cron-near-minutes') {
+                console.warn(`[Config Warning] --kiro-oauth-creds-file flag requires a value.`);
+            }
+        } else if (args[i] === '--qwen-oauth-creds-file') {
+            if (i + 1 < args.length) {
+                currentConfig.QWEN_OAUTH_CREDS_FILE_PATH = args[i + 1];
+                i++;
+            } else {
+                console.warn(`[Config Warning] --qwen-oauth-creds-file flag requires a value.`);
+            }
+        } else if (args[i] === '--cron-near-minutes') {
             if (i + 1 < args.length) {
                 currentConfig.CRON_NEAR_MINUTES = parseInt(args[i + 1], 10);
                 i++;
