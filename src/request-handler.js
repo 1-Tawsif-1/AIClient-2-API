@@ -52,7 +52,7 @@ export function createRequestHandler(config, providerPoolManager) {
         console.log(`[Server] Received request: ${req.method} http://${req.headers.host}${req.url}`);
 
         // Health check endpoint
-        if (method === 'GET' && path === '/health') {
+        if ((method === 'GET' || method === 'HEAD') && path === '/health') {
             const userAgent = req.headers['user-agent'] || '';
             if (userAgent.includes('UptimeRobot')) {
                 console.log(`[Health Check] UptimeRobot ping received at ${new Date().toLocaleString()}`);
