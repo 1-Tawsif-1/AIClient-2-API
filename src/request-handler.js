@@ -53,6 +53,10 @@ export function createRequestHandler(config, providerPoolManager) {
 
         // Health check endpoint
         if (method === 'GET' && path === '/health') {
+            const userAgent = req.headers['user-agent'] || '';
+            if (userAgent.includes('UptimeRobot')) {
+                console.log(`[Health Check] UptimeRobot ping received at ${new Date().toLocaleString()}`);
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 status: 'healthy',
@@ -80,7 +84,7 @@ export function createRequestHandler(config, providerPoolManager) {
             currentConfig.MODEL_PROVIDER = modelProviderHeader;
             console.log(`[Config] MODEL_PROVIDER overridden by header to: ${currentConfig.MODEL_PROVIDER}`);
         }
-          
+
         // Check if the first path segment matches a MODEL_PROVIDER and switch if it does
         const pathSegments = path.split('/').filter(segment => segment.length > 0);
         if (pathSegments.length > 0) {
