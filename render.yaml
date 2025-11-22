@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: aiclient-2-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/api-server.js
+    envVars:
+      - key: MODEL_PROVIDER
+        value: claude-kiro-oauth
+      - key: HOST
+        value: 0.0.0.0
+      - key: SERVER_PORT
+        value: 10000
+      - key: REQUIRED_API_KEY
+        sync: false
+      - key: KIRO_OAUTH_CREDS_BASE64
+        sync: false
