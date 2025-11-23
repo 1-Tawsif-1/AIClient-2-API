@@ -545,30 +545,42 @@ async initializeAuth(forceRefresh = false) {
                     content: '',
                     modelId: codewhispererModel,
                     origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR,
-                    userInputMessageContext: {}
                 };
+
                 if (Array.isArray(message.content)) {
-                    userInputMessage.images = []; // Initialize images array
+                    const images = [];
+                    const userInputMessageContext = {};
+
                     for (const part of message.content) {
                         if (part.type === 'text') {
                             userInputMessage.content += part.text;
                         } else if (part.type === 'tool_result') {
-                            if (!userInputMessage.userInputMessageContext.toolResults) {
-                                userInputMessage.userInputMessageContext.toolResults = [];
+                            if (!userInputMessageContext.toolResults) {
+                                userInputMessageContext.toolResults = [];
                             }
-                            userInputMessage.userInputMessageContext.toolResults.push({
+                            userInputMessageContext.toolResults.push({
                                 content: [{ text: this.getContentText(part.content) }],
                                 status: 'success',
                                 toolUseId: part.tool_use_id
                             });
                         } else if (part.type === 'image') {
-                            userInputMessage.images.push({
+                            images.push({
                                 format: part.source.media_type.split('/')[1],
                                 source: {
                                     bytes: part.source.data
                                 }
                             });
                         }
+                    }
+
+                    // Only add images if they exist
+                    if (images.length > 0) {
+                        userInputMessage.images = images;
+                    }
+
+                    // Only add userInputMessageContext if it has properties
+                    if (Object.keys(userInputMessageContext).length > 0) {
+                        userInputMessage.userInputMessageContext = userInputMessageContext;
                     }
                 } else {
                     userInputMessage.content = this.getContentText(message);
@@ -577,14 +589,15 @@ async initializeAuth(forceRefresh = false) {
             } else if (message.role === 'assistant') {
                 let assistantResponseMessage = {
                     content: '',
-                    toolUses: []
                 };
+                const toolUses = [];
+
                 if (Array.isArray(message.content)) {
                     for (const part of message.content) {
                         if (part.type === 'text') {
                             assistantResponseMessage.content += part.text;
                         } else if (part.type === 'tool_use') {
-                            assistantResponseMessage.toolUses.push({
+                            toolUses.push({
                                 input: part.input,
                                 name: part.name,
                                 toolUseId: part.id
@@ -594,6 +607,12 @@ async initializeAuth(forceRefresh = false) {
                 } else {
                     assistantResponseMessage.content = this.getContentText(message);
                 }
+
+                // Only add toolUses if they exist
+                if (toolUses.length > 0) {
+                    assistantResponseMessage.toolUses = toolUses;
+                }
+
                 history.push({ assistantResponseMessage });
             }
         }
@@ -648,21 +667,43 @@ async initializeAuth(forceRefresh = false) {
         };
 
         if (currentMessage.role === 'user') {
-            request.conversationState.currentMessage.userInputMessage = {
+            const userInputMessage = {
                 content: currentContent,
                 modelId: codewhispererModel,
                 origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR,
-                images: currentImages && currentImages.length > 0 ? currentImages : null, // Add images here
-                userInputMessageContext: {
-                    toolResults: currentToolResults.length > 0 ? currentToolResults : null,
-                    tools: Object.keys(toolsContext).length > 0 ? toolsContext.tools : null
-                }
             };
+
+            // Only add images if they exist
+            if (currentImages && currentImages.length > 0) {
+                userInputMessage.images = currentImages;
+            }
+
+            // Build userInputMessageContext only if there are toolResults or tools
+            const userInputMessageContext = {};
+            if (currentToolResults.length > 0) {
+                userInputMessageContext.toolResults = currentToolResults;
+            }
+            if (Object.keys(toolsContext).length > 0 && toolsContext.tools) {
+                userInputMessageContext.tools = toolsContext.tools;
+            }
+
+            // Only add userInputMessageContext if it has properties
+            if (Object.keys(userInputMessageContext).length > 0) {
+                userInputMessage.userInputMessageContext = userInputMessageContext;
+            }
+
+            request.conversationState.currentMessage.userInputMessage = userInputMessage;
         } else if (currentMessage.role === 'assistant') {
-            request.conversationState.currentMessage.assistantResponseMessage = {
+            const assistantResponseMessage = {
                 content: currentContent,
-                toolUses: currentToolUses.length > 0 ? currentToolUses : undefined
             };
+
+            // Only add toolUses if they exist
+            if (currentToolUses.length > 0) {
+                assistantResponseMessage.toolUses = currentToolUses;
+            }
+
+            request.conversationState.currentMessage.assistantResponseMessage = assistantResponseMessage;
         }
 
         if (this.authMethod === KIRO_CONSTANTS.AUTH_METHOD_SOCIAL) {
@@ -778,6 +819,9 @@ async initializeAuth(forceRefresh = false) {
         const baseDelay = this.config.REQUEST_BASE_DELAY || 1000; // 1 second base delay
 
         const requestData = this.buildCodewhispererRequest(body.messages, model, body.tools, body.system);
+
+        // Log the request for debugging
+        console.log('[Kiro] Request to CodeWhisperer:', JSON.stringify(requestData, null, 2));
 
         try {
             const token = this.accessToken; // Use the already initialized token
