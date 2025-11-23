@@ -497,15 +497,21 @@ async initializeAuth(forceRefresh = false) {
         
         let toolsContext = {};
         if (tools && Array.isArray(tools) && tools.length > 0) {
-            toolsContext = {
-                tools: tools.map(tool => ({
+            // Filter out invalid tools and map valid ones
+            const validTools = tools
+                .filter(tool => tool && tool.name && typeof tool.name === 'string')
+                .map(tool => ({
                     toolSpecification: {
                         name: tool.name,
                         description: tool.description || "",
-                        inputSchema: { json: tool.input_schema || {} }
+                        inputSchema: { json: tool.input_schema || { type: "object", properties: {} } }
                     }
-                }))
-            };
+                }));
+
+            // Only create toolsContext if there are valid tools
+            if (validTools.length > 0) {
+                toolsContext = { tools: validTools };
+            }
         }
 
         const history = [];
