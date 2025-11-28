@@ -329,12 +329,15 @@
                     body: JSON.stringify({ base64Creds })
                 });
 
+                const data = await response.json();
+
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || `API request failed: ${response.status}`);
+                    throw new Error(data.error || 'API request failed: ' + response.status);
                 }
 
-                const data = await response.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
 
                 // Display account info
                 displayAccountInfo(data.accountInfo);
@@ -361,8 +364,19 @@
                 console.error('Error:', err);
                 loading.classList.remove('show');
                 checkBtn.disabled = false;
-                const errorMessage = typeof err === 'object' ? (err.message || JSON.stringify(err)) : String(err);
-                showError('Failed to fetch credits: ' + errorMessage);
+                let errorMsg = 'Unknown error';
+                if (err && err.message) {
+                    errorMsg = err.message;
+                } else if (typeof err === 'string') {
+                    errorMsg = err;
+                } else {
+                    try {
+                        errorMsg = JSON.stringify(err);
+                    } catch (e) {
+                        errorMsg = String(err);
+                    }
+                }
+                showError('Failed to fetch credits: ' + errorMsg);
             }
         }
 

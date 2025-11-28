@@ -154,15 +154,24 @@ export function createRequestHandler(config, providerPoolManager) {
                             }
                         }));
                     } catch (error) {
-                        console.error('[Kiro Credits Check] Error:', error.message);
+                        console.error('[Kiro Credits Check] Error:', error.message || error);
+                        let errorMessage = 'Unknown error';
+                        if (error.response && error.response.data) {
+                            // Axios error with response
+                            errorMessage = error.response.data.message || error.response.data.error || JSON.stringify(error.response.data);
+                        } else if (error.message) {
+                            errorMessage = error.message;
+                        } else {
+                            errorMessage = String(error);
+                        }
                         res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-                        res.end(JSON.stringify({ error: error.message }));
+                        res.end(JSON.stringify({ error: errorMessage }));
                     }
                 });
             } catch (error) {
-                console.error('[Kiro Credits Check] Error:', error.message);
+                console.error('[Kiro Credits Check] Error:', error.message || error);
                 res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-                res.end(JSON.stringify({ error: error.message }));
+                res.end(JSON.stringify({ error: error.message || String(error) }));
             }
             return true;
         }
