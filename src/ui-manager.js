@@ -313,8 +313,8 @@ export async function handleUIApiRequests(method, pathParam, req, res, currentCo
         return true;
     }
     
-    // Handle UI management API requests (需要token验证，除了登录接口、健康检查和Events接口)
-    if (pathParam.startsWith('/api/') && pathParam !== '/api/login' && pathParam !== '/api/health' && pathParam !== '/api/events') {
+    // Handle UI management API requests (需要token验证，除了登录接口、健康检查、Events接口和Kiro信用检查)
+    if (pathParam.startsWith('/api/') && pathParam !== '/api/login' && pathParam !== '/api/health' && pathParam !== '/api/events' && pathParam !== '/api/check-kiro-credits') {
         // 检查token验证
         if (!checkAuth(req)) {
             res.writeHead(401, {
