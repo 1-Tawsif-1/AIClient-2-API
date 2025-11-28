@@ -230,53 +230,70 @@ export class KiroApiService {
         this.isInitialized = false;
         this.config = config;
         this.credPath = config.KIRO_OAUTH_CREDS_DIR_PATH || path.join(os.homedir(), ".aws", "sso", "cache");
-        this.credsBase64 = config.KIRO_OAUTH_CREDS_BASE64;
-        this.credsBase64_2 = config.KIRO_OAUTH_CREDS_BASE64_2; // Second account support
-        this.currentCredIndex = 0; // Track which credential is active (0 or 1)
+
+        // Dynamic credential loading - supports up to 7 accounts
+        this.credentialsList = []; // Array to hold all parsed credentials
+        this.currentCredIndex = 0; // Track which credential is active
+
+        // Load all available credentials dynamically
+        this._loadAllCredentials(config);
+
         this.useSystemProxy = config?.USE_SYSTEM_PROXY_KIRO ?? false;
         console.log(`[Kiro] System proxy ${this.useSystemProxy ? 'enabled' : 'disabled'}`);
-        if (this.credsBase64_2) {
-            console.log(`[Kiro] Fallback credential configured (KIRO_OAUTH_CREDS_BASE64_2)`);
-        }
-        // this.accessToken = config.KIRO_ACCESS_TOKEN;
-        // this.refreshToken = config.KIRO_REFRESH_TOKEN;
-        // this.clientId = config.KIRO_CLIENT_ID;
-        // this.clientSecret = config.KIRO_CLIENT_SECRET;
-        // this.authMethod = KIRO_CONSTANTS.AUTH_METHOD_SOCIAL;
-        // this.refreshUrl = KIRO_CONSTANTS.REFRESH_URL;
-        // this.refreshIDCUrl = KIRO_CONSTANTS.REFRESH_IDC_URL;
-        // this.baseUrl = KIRO_CONSTANTS.BASE_URL;
-        // this.amazonQUrl = KIRO_CONSTANTS.AMAZON_Q_URL;
+        console.log(`[Kiro] ${this.credentialsList.length} credential(s) configured for rotation`);
 
-        // Add kiro-oauth-creds-base64 and kiro-oauth-creds-file to config
-        if (config.KIRO_OAUTH_CREDS_BASE64) {
-            try {
-                const decodedCreds = Buffer.from(config.KIRO_OAUTH_CREDS_BASE64, 'base64').toString('utf8');
-                const parsedCreds = JSON.parse(decodedCreds);
-                // Store parsedCreds to be merged in initializeAuth
-                this.base64Creds = parsedCreds;
-                console.info('[Kiro] Successfully decoded Base64 credentials in constructor.');
-            } catch (error) {
-                console.error(`[Kiro] Failed to parse Base64 credentials in constructor: ${error.message}`);
-            }
-        } else if (config.KIRO_OAUTH_CREDS_FILE_PATH) {
+        // Support for file-based credentials
+        if (config.KIRO_OAUTH_CREDS_FILE_PATH) {
             this.credsFilePath = config.KIRO_OAUTH_CREDS_FILE_PATH;
-        }
-
-        // Load second credential if available
-        if (config.KIRO_OAUTH_CREDS_BASE64_2) {
-            try {
-                const decodedCreds2 = Buffer.from(config.KIRO_OAUTH_CREDS_BASE64_2, 'base64').toString('utf8');
-                const parsedCreds2 = JSON.parse(decodedCreds2);
-                this.base64Creds_2 = parsedCreds2;
-                console.info('[Kiro] Successfully decoded Base64 credentials #2 in constructor.');
-            } catch (error) {
-                console.error(`[Kiro] Failed to parse Base64 credentials #2 in constructor: ${error.message}`);
-            }
         }
 
         this.modelName = KIRO_CONSTANTS.DEFAULT_MODEL_NAME;
         this.axiosInstance = null; // Initialize later in async method
+    }
+
+    /**
+     * Load all available Base64 credentials from config (supports 1-7)
+     * @param {Object} config - Configuration object
+     */
+    _loadAllCredentials(config) {
+        const credKeys = [
+            'KIRO_OAUTH_CREDS_BASE64',
+            'KIRO_OAUTH_CREDS_BASE64_2',
+            'KIRO_OAUTH_CREDS_BASE64_3',
+            'KIRO_OAUTH_CREDS_BASE64_4',
+            'KIRO_OAUTH_CREDS_BASE64_5',
+            'KIRO_OAUTH_CREDS_BASE64_6',
+            'KIRO_OAUTH_CREDS_BASE64_7'
+        ];
+
+        for (let i = 0; i < credKeys.length; i++) {
+            const base64Value = config[credKeys[i]];
+            if (base64Value) {
+                try {
+                    const decodedCreds = Buffer.from(base64Value, 'base64').toString('utf8');
+                    const parsedCreds = JSON.parse(decodedCreds);
+                    this.credentialsList.push({
+                        index: i + 1,
+                        configKey: credKeys[i],
+                        credentials: parsedCreds
+                    });
+                    console.info(`[Kiro] Successfully decoded Base64 credentials #${i + 1} (${credKeys[i]})`);
+                } catch (error) {
+                    console.error(`[Kiro] Failed to parse Base64 credentials #${i + 1} (${credKeys[i]}): ${error.message}`);
+                }
+            }
+        }
+    }
+
+    /**
+     * Get the current credential object
+     * @returns {Object|null} Current credential or null if none available
+     */
+    _getCurrentCredential() {
+        if (this.credentialsList.length === 0) {
+            return null;
+        }
+        return this.credentialsList[this.currentCredIndex];
     }
  
     async initialize() {
@@ -353,44 +370,36 @@ async initializeAuth(forceRefresh = false) {
     try {
         let mergedCredentials = {};
 
-        // Priority 1: Load from Base64 credentials if available
-        // Select credentials based on currentCredIndex
-        const selectedBase64Creds = this.currentCredIndex === 0 ? this.base64Creds : this.base64Creds_2;
-        if (selectedBase64Creds) {
-            Object.assign(mergedCredentials, selectedBase64Creds);
-            console.info(`[Kiro Auth] Successfully loaded credentials from Base64 (account #${this.currentCredIndex + 1}).`);
-            // Clear base64Creds after use to prevent re-processing
-            if (this.currentCredIndex === 0) {
-                this.base64Creds = null;
-            } else {
-                this.base64Creds_2 = null;
-            }
+        // Priority 1: Load from Base64 credentials array if available
+        const currentCred = this._getCurrentCredential();
+        if (currentCred && currentCred.credentials) {
+            Object.assign(mergedCredentials, currentCred.credentials);
+            console.info(`[Kiro Auth] Using credentials #${currentCred.index} (${currentCred.configKey})`);
         }
 
-        // Priority 2 & 3 合并: 从指定文件路径或目录加载凭证
-        // 读取指定的 credPath 文件以及目录下的其他 JSON 文件(排除当前文件)
+        // Priority 2 & 3: Load from file path or directory
         const targetFilePath = this.credsFilePath || path.join(this.credPath, KIRO_AUTH_TOKEN_FILE);
         const dirPath = path.dirname(targetFilePath);
         const targetFileName = path.basename(targetFilePath);
-        
+
         console.debug(`[Kiro Auth] Attempting to load credentials from directory: ${dirPath}`);
-        
+
         try {
-            // 首先尝试读取目标文件
+            // First try to read the target file
             const targetCredentials = await loadCredentialsFromFile(targetFilePath);
             if (targetCredentials) {
                 Object.assign(mergedCredentials, targetCredentials);
                 console.info(`[Kiro Auth] Successfully loaded OAuth credentials from ${targetFilePath}`);
             }
-            
-            // 然后读取目录下的其他 JSON 文件(排除目标文件本身)
+
+            // Then read other JSON files in directory (excluding target file)
             const files = await fs.readdir(dirPath);
             for (const file of files) {
                 if (file.endsWith('.json') && file !== targetFileName) {
                     const filePath = path.join(dirPath, file);
                     const credentials = await loadCredentialsFromFile(filePath);
                     if (credentials) {
-                        // 保留已有的 expiresAt,避免被覆盖
+                        // Preserve existing expiresAt
                         credentials.expiresAt = mergedCredentials.expiresAt;
                         Object.assign(mergedCredentials, credentials);
                         console.debug(`[Kiro Auth] Loaded Client credentials from ${file}`);
@@ -401,8 +410,7 @@ async initializeAuth(forceRefresh = false) {
             console.warn(`[Kiro Auth] Error loading credentials from directory ${dirPath}: ${error.message}`);
         }
 
-        // console.log('[Kiro Auth] Merged credentials:', mergedCredentials);
-        // Apply loaded credentials, prioritizing existing values if they are not null/undefined
+        // Apply loaded credentials
         this.accessToken = this.accessToken || mergedCredentials.accessToken;
         this.refreshToken = this.refreshToken || mergedCredentials.refreshToken;
         this.clientId = this.clientId || mergedCredentials.clientId;
@@ -415,7 +423,7 @@ async initializeAuth(forceRefresh = false) {
         // Ensure region is set before using it in URLs
         if (!this.region) {
             console.warn('[Kiro Auth] Region not found in credentials. Using default region us-east-1 for URLs.');
-            this.region = 'us-east-1'; // Set default region
+            this.region = 'us-east-1';
         }
 
         this.refreshUrl = KIRO_CONSTANTS.REFRESH_URL.replace("{{region}}", this.region);
@@ -455,7 +463,7 @@ async initializeAuth(forceRefresh = false) {
                 this.expiresAt = expiresAt;
                 console.info('[Kiro Auth] Access token refreshed successfully');
 
-                // Update the token file - use specified path if configured, otherwise use default
+                // Update the token file
                 const tokenFilePath = this.credsFilePath || path.join(this.credPath, KIRO_AUTH_TOKEN_FILE);
                 const updatedTokenData = {
                     accessToken: this.accessToken,
@@ -481,46 +489,52 @@ async initializeAuth(forceRefresh = false) {
 }
 
     /**
-     * Switches to the fallback credential if available
-     * @returns {boolean} True if switched successfully, false if no fallback available
+     * Switches to the next available credential in rotation
+     * @returns {boolean} True if switched successfully, false if no more credentials available
      */
     switchCredentials() {
-        if (this.credsBase64_2 && this.currentCredIndex === 0) {
-            console.log('[Kiro] Switching to fallback credential (account #2)...');
-            this.currentCredIndex = 1;
-            // Reset credentials to force reload
-            this.accessToken = null;
-            this.refreshToken = null;
-            // Restore base64Creds_2 for reloading
-            if (this.config.KIRO_OAUTH_CREDS_BASE64_2) {
-                try {
-                    const decodedCreds2 = Buffer.from(this.config.KIRO_OAUTH_CREDS_BASE64_2, 'base64').toString('utf8');
-                    this.base64Creds_2 = JSON.parse(decodedCreds2);
-                } catch (error) {
-                    console.error(`[Kiro] Failed to reload Base64 credentials #2: ${error.message}`);
-                    return false;
-                }
-            }
-            return true;
-        } else if (this.credsBase64 && this.currentCredIndex === 1) {
-            console.log('[Kiro] Switching back to primary credential (account #1)...');
-            this.currentCredIndex = 0;
-            // Reset credentials to force reload
-            this.accessToken = null;
-            this.refreshToken = null;
-            // Restore base64Creds for reloading
-            if (this.config.KIRO_OAUTH_CREDS_BASE64) {
-                try {
-                    const decodedCreds = Buffer.from(this.config.KIRO_OAUTH_CREDS_BASE64, 'base64').toString('utf8');
-                    this.base64Creds = JSON.parse(decodedCreds);
-                } catch (error) {
-                    console.error(`[Kiro] Failed to reload Base64 credentials #1: ${error.message}`);
-                    return false;
-                }
-            }
-            return true;
+        if (this.credentialsList.length <= 1) {
+            console.log('[Kiro] No additional credentials available for rotation');
+            return false;
         }
-        return false;
+
+        const previousIndex = this.currentCredIndex;
+        const previousCred = this._getCurrentCredential();
+
+        // Move to next credential (circular rotation)
+        this.currentCredIndex = (this.currentCredIndex + 1) % this.credentialsList.length;
+        const newCred = this._getCurrentCredential();
+
+        console.log(`[Kiro] Switching credentials: #${previousCred?.index || 'N/A'} -> #${newCred?.index || 'N/A'} (${this.currentCredIndex + 1}/${this.credentialsList.length})`);
+
+        // Reset credentials to force reload
+        this.accessToken = null;
+        this.refreshToken = null;
+        this.clientId = null;
+        this.clientSecret = null;
+        this.authMethod = null;
+        this.expiresAt = null;
+        this.profileArn = null;
+        this.region = null;
+
+        return true;
+    }
+
+    /**
+     * Get total number of available credentials
+     * @returns {number} Number of credentials configured
+     */
+    getCredentialsCount() {
+        return this.credentialsList.length;
+    }
+
+    /**
+     * Get current credential index (1-based for display)
+     * @returns {number} Current credential number
+     */
+    getCurrentCredentialNumber() {
+        const cred = this._getCurrentCredential();
+        return cred ? cred.index : 0;
     }
 
     /**

@@ -75,6 +75,11 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
             GEMINI_OAUTH_CREDS_FILE_PATH: process.env.GEMINI_OAUTH_CREDS_FILE_PATH || null,
             KIRO_OAUTH_CREDS_BASE64: process.env.KIRO_OAUTH_CREDS_BASE64 || null,
             KIRO_OAUTH_CREDS_BASE64_2: process.env.KIRO_OAUTH_CREDS_BASE64_2 || null,
+            KIRO_OAUTH_CREDS_BASE64_3: process.env.KIRO_OAUTH_CREDS_BASE64_3 || null,
+            KIRO_OAUTH_CREDS_BASE64_4: process.env.KIRO_OAUTH_CREDS_BASE64_4 || null,
+            KIRO_OAUTH_CREDS_BASE64_5: process.env.KIRO_OAUTH_CREDS_BASE64_5 || null,
+            KIRO_OAUTH_CREDS_BASE64_6: process.env.KIRO_OAUTH_CREDS_BASE64_6 || null,
+            KIRO_OAUTH_CREDS_BASE64_7: process.env.KIRO_OAUTH_CREDS_BASE64_7 || null,
             KIRO_OAUTH_CREDS_FILE_PATH: process.env.KIRO_OAUTH_CREDS_FILE_PATH || null,
             QWEN_OAUTH_CREDS_FILE_PATH: process.env.QWEN_OAUTH_CREDS_FILE_PATH || null,
             PROJECT_ID: process.env.PROJECT_ID || null,
@@ -225,6 +230,41 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
             } else {
                 console.warn(`[Config Warning] --kiro-oauth-creds-base64-2 flag requires a value.`);
             }
+        } else if (args[i] === '--kiro-oauth-creds-base64-3') {
+            if (i + 1 < args.length) {
+                currentConfig.KIRO_OAUTH_CREDS_BASE64_3 = args[i + 1];
+                i++;
+            } else {
+                console.warn(`[Config Warning] --kiro-oauth-creds-base64-3 flag requires a value.`);
+            }
+        } else if (args[i] === '--kiro-oauth-creds-base64-4') {
+            if (i + 1 < args.length) {
+                currentConfig.KIRO_OAUTH_CREDS_BASE64_4 = args[i + 1];
+                i++;
+            } else {
+                console.warn(`[Config Warning] --kiro-oauth-creds-base64-4 flag requires a value.`);
+            }
+        } else if (args[i] === '--kiro-oauth-creds-base64-5') {
+            if (i + 1 < args.length) {
+                currentConfig.KIRO_OAUTH_CREDS_BASE64_5 = args[i + 1];
+                i++;
+            } else {
+                console.warn(`[Config Warning] --kiro-oauth-creds-base64-5 flag requires a value.`);
+            }
+        } else if (args[i] === '--kiro-oauth-creds-base64-6') {
+            if (i + 1 < args.length) {
+                currentConfig.KIRO_OAUTH_CREDS_BASE64_6 = args[i + 1];
+                i++;
+            } else {
+                console.warn(`[Config Warning] --kiro-oauth-creds-base64-6 flag requires a value.`);
+            }
+        } else if (args[i] === '--kiro-oauth-creds-base64-7') {
+            if (i + 1 < args.length) {
+                currentConfig.KIRO_OAUTH_CREDS_BASE64_7 = args[i + 1];
+                i++;
+            } else {
+                console.warn(`[Config Warning] --kiro-oauth-creds-base64-7 flag requires a value.`);
+            }
         } else if (args[i] === '--kiro-oauth-creds-file') {
             if (i + 1 < args.length) {
                 currentConfig.KIRO_OAUTH_CREDS_FILE_PATH = args[i + 1];
@@ -368,10 +408,15 @@ export function logProviderSpecificDetails(provider, config) {
             if (config.KIRO_OAUTH_CREDS_FILE_PATH) {
                 console.log(`  [claude-kiro-oauth] OAuth Creds File Path: ${config.KIRO_OAUTH_CREDS_FILE_PATH}`);
             } else if (config.KIRO_OAUTH_CREDS_BASE64) {
-                console.log(`  [claude-kiro-oauth] OAuth Creds Source: Provided via Base64 string`);
-                if (config.KIRO_OAUTH_CREDS_BASE64_2) {
-                    console.log(`  [claude-kiro-oauth] OAuth Creds Fallback: Base64 string #2 configured`);
-                }
+                // Count available credentials dynamically
+                let credCount = 1;
+                if (config.KIRO_OAUTH_CREDS_BASE64_2) credCount++;
+                if (config.KIRO_OAUTH_CREDS_BASE64_3) credCount++;
+                if (config.KIRO_OAUTH_CREDS_BASE64_4) credCount++;
+                if (config.KIRO_OAUTH_CREDS_BASE64_5) credCount++;
+                if (config.KIRO_OAUTH_CREDS_BASE64_6) credCount++;
+                if (config.KIRO_OAUTH_CREDS_BASE64_7) credCount++;
+                console.log(`  [claude-kiro-oauth] OAuth Creds Source: ${credCount} account(s) configured for rotation`);
             } else {
                 console.log(`  [claude-kiro-oauth] OAuth Creds: Default`);
             }
