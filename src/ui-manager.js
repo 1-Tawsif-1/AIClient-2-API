@@ -224,7 +224,22 @@ const upload = multer({
  * @param {http.ServerResponse} res - The HTTP response object
  */
 export async function serveStaticFiles(pathParam, res) {
-    const filePath = path.join(process.cwd(), 'static', pathParam === '/' || pathParam === '/index.html' ? 'index.html' : pathParam.replace('/static/', ''));
+    let targetPath = pathParam;
+
+    // Handle root and index
+    if (pathParam === '/' || pathParam === '/index.html') {
+        targetPath = 'index.html';
+    }
+    // Handle /static/ prefix
+    else if (pathParam.startsWith('/static/')) {
+        targetPath = pathParam.replace('/static/', '');
+    }
+    // Handle root-level files like /kiro-credits-checker.html
+    else if (pathParam.startsWith('/')) {
+        targetPath = pathParam.substring(1); // Remove leading /
+    }
+
+    const filePath = path.join(process.cwd(), 'static', targetPath);
 
     if (existsSync(filePath)) {
         const ext = path.extname(filePath);

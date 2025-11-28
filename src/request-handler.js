@@ -34,7 +34,7 @@ export function createRequestHandler(config, providerPoolManager) {
         }
 
         // Serve static files for UI (除了登录页面需要认证)
-        if (path.startsWith('/static/') || path === '/' || path === '/favicon.ico' || path === '/index.html' || path.startsWith('/app/') || path === '/login.html') {
+        if (path.startsWith('/static/') || path === '/' || path === '/favicon.ico' || path === '/index.html' || path.startsWith('/app/') || path === '/login.html' || path === '/kiro-credits-checker.html') {
             const served = await serveStaticFiles(path, res);
             if (served) return;
         }
