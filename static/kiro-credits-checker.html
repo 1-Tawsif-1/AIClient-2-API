@@ -320,48 +320,29 @@
             loading.classList.add('show');
 
             try {
-                // Decode base64
-                const decodedStr = atob(base64Creds);
-                const creds = JSON.parse(decodedStr);
-
-                if (!creds.accessToken || !creds.region) {
-                    throw new Error('Invalid credentials format');
-                }
-
-                // Get MAC address SHA256 (using a dummy value for browser)
-                const macSha256 = '0000000000000000000000000000000000000000000000000000000000000000';
-
-                // Fetch user info from Kiro API
-                const region = creds.region || 'us-east-1';
-                const url = `https://codewhisperer.${region}.amazonaws.com/getUserUsage`;
-
-                const response = await fetch(url, {
+                // Call our backend API endpoint
+                const response = await fetch('/api/check-kiro-credits', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${creds.accessToken}`,
-                        'x-amz-user-agent': `aws-sdk-js/1.0.7 KiroIDE-0.1.25-${macSha256}`,
-                        'user-agent': `aws-sdk-js/1.0.7 ua/2.1 os/win32#10.0.26100 lang/js md/nodejs#20.16.0 api/codewhispererstreaming#1.0.7 m/E KiroIDE-0.1.25-${macSha256}`,
-                        'amz-sdk-request': 'attempt=1; max=1',
-                        'x-amzn-kiro-agent-mode': 'vibe',
-                        'Accept': 'application/json'
                     },
-                    body: JSON.stringify({})
+                    body: JSON.stringify({ base64Creds })
                 });
 
                 if (!response.ok) {
-                    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `API request failed: ${response.status}`);
                 }
 
                 const data = await response.json();
 
                 // Display account info
-                displayAccountInfo(creds);
+                displayAccountInfo(data.accountInfo);
 
-                // Calculate and display credits
-                const totalCredits = 500; // Kiro free tier
-                const usedCredits = data.usedCredits || 0;
-                const creditsLeft = totalCredits - usedCredits;
+                // Display credits
+                const totalCredits = data.totalCredits;
+                const usedCredits = data.usedCredits;
+                const creditsLeft = data.creditsLeft;
                 const percentage = (usedCredits / totalCredits * 100).toFixed(1);
 
                 document.getElementById('totalCredits').textContent = totalCredits;
@@ -384,24 +365,24 @@
             }
         }
 
-        function displayAccountInfo(creds) {
-            const accountInfo = document.getElementById('accountInfo');
-            const expiryDate = new Date(creds.expiresAt);
+        function displayAccountInfo(accountInfo) {
+            const accountInfoDiv = document.getElementById('accountInfo');
+            const expiryDate = new Date(accountInfo.expiresAt);
             const now = new Date();
             const isExpired = expiryDate < now;
 
-            accountInfo.innerHTML = `
+            accountInfoDiv.innerHTML = `
                 <div class="account-info-item">
                     <span class="account-label">Provider:</span>
-                    <span class="account-value">${creds.provider || 'Unknown'}</span>
+                    <span class="account-value">${accountInfo.provider || 'Unknown'}</span>
                 </div>
                 <div class="account-info-item">
                     <span class="account-label">Region:</span>
-                    <span class="account-value">${creds.region || 'us-east-1'}</span>
+                    <span class="account-value">${accountInfo.region || 'us-east-1'}</span>
                 </div>
                 <div class="account-info-item">
                     <span class="account-label">Auth Method:</span>
-                    <span class="account-value">${creds.authMethod || 'social'}</span>
+                    <span class="account-value">${accountInfo.authMethod || 'social'}</span>
                 </div>
                 <div class="account-info-item">
                     <span class="account-label">Token Expires:</span>

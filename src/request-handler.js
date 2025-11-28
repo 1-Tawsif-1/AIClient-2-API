@@ -66,6 +66,97 @@ export function createRequestHandler(config, providerPoolManager) {
             return true;
         }
 
+        // Kiro credits check endpoint (no auth required)
+        if (method === 'POST' && path === '/api/check-kiro-credits') {
+            try {
+                let body = '';
+                req.on('data', chunk => {
+                    body += chunk.toString();
+                });
+                req.on('end', async () => {
+                    try {
+                        const { base64Creds } = JSON.parse(body);
+
+                        if (!base64Creds) {
+                            res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+                            res.end(JSON.stringify({ error: 'base64Creds is required' }));
+                            return;
+                        }
+
+                        // Decode credentials
+                        const decodedStr = Buffer.from(base64Creds, 'base64').toString('utf8');
+                        const creds = JSON.parse(decodedStr);
+
+                        if (!creds.accessToken || !creds.region) {
+                            res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+                            res.end(JSON.stringify({ error: 'Invalid credentials format' }));
+                            return;
+                        }
+
+                        // Import axios dynamically
+                        const axios = (await import('axios')).default;
+                        const crypto = await import('crypto');
+                        const os = await import('os');
+
+                        // Get MAC address SHA256
+                        const networkInterfaces = os.networkInterfaces();
+                        let macAddress = '';
+                        for (const interfaceName in networkInterfaces) {
+                            const networkInterface = networkInterfaces[interfaceName];
+                            for (const iface of networkInterface) {
+                                if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') {
+                                    macAddress = iface.mac;
+                                    break;
+                                }
+                            }
+                            if (macAddress) break;
+                        }
+                        if (!macAddress) macAddress = '00:00:00:00:00:00';
+                        const macSha256 = crypto.createHash('sha256').update(macAddress).digest('hex');
+
+                        // Call Kiro API
+                        const region = creds.region || 'us-east-1';
+                        const url = `https://codewhisperer.${region}.amazonaws.com/getUserUsage`;
+
+                        const response = await axios.post(url, {}, {
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${creds.accessToken}`,
+                                'x-amz-user-agent': `aws-sdk-js/1.0.7 KiroIDE-0.1.25-${macSha256}`,
+                                'user-agent': `aws-sdk-js/1.0.7 ua/2.1 os/win32#10.0.26100 lang/js md/nodejs#20.16.0 api/codewhispererstreaming#1.0.7 m/E KiroIDE-0.1.25-${macSha256}`,
+                                'amz-sdk-request': 'attempt=1; max=1',
+                                'x-amzn-kiro-agent-mode': 'vibe',
+                                'Accept': 'application/json'
+                            }
+                        });
+
+                        // Return usage data
+                        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+                        res.end(JSON.stringify({
+                            usedCredits: response.data.usedCredits || 0,
+                            totalCredits: 500,
+                            creditsLeft: 500 - (response.data.usedCredits || 0),
+                            accountInfo: {
+                                provider: creds.provider || 'Unknown',
+                                region: creds.region || 'us-east-1',
+                                authMethod: creds.authMethod || 'social',
+                                expiresAt: creds.expiresAt
+                            }
+                        }));
+                    } catch (error) {
+                        console.error('[Kiro Credits Check] Error:', error.message);
+                        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+                        res.end(JSON.stringify({ error: error.message }));
+                    }
+                });
+            } catch (error) {
+                console.error('[Kiro Credits Check] Error:', error.message);
+                res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+            return true;
+        }
+
         // Ignore count_tokens requests
         if (path.includes('/count_tokens')) {
             console.log(`[Server] Ignoring count_tokens request: ${path}`);
