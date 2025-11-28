@@ -231,8 +231,13 @@ export class KiroApiService {
         this.config = config;
         this.credPath = config.KIRO_OAUTH_CREDS_DIR_PATH || path.join(os.homedir(), ".aws", "sso", "cache");
         this.credsBase64 = config.KIRO_OAUTH_CREDS_BASE64;
+        this.credsBase64_2 = config.KIRO_OAUTH_CREDS_BASE64_2; // Second account support
+        this.currentCredIndex = 0; // Track which credential is active (0 or 1)
         this.useSystemProxy = config?.USE_SYSTEM_PROXY_KIRO ?? false;
         console.log(`[Kiro] System proxy ${this.useSystemProxy ? 'enabled' : 'disabled'}`);
+        if (this.credsBase64_2) {
+            console.log(`[Kiro] Fallback credential configured (KIRO_OAUTH_CREDS_BASE64_2)`);
+        }
         // this.accessToken = config.KIRO_ACCESS_TOKEN;
         // this.refreshToken = config.KIRO_REFRESH_TOKEN;
         // this.clientId = config.KIRO_CLIENT_ID;
@@ -256,6 +261,18 @@ export class KiroApiService {
             }
         } else if (config.KIRO_OAUTH_CREDS_FILE_PATH) {
             this.credsFilePath = config.KIRO_OAUTH_CREDS_FILE_PATH;
+        }
+
+        // Load second credential if available
+        if (config.KIRO_OAUTH_CREDS_BASE64_2) {
+            try {
+                const decodedCreds2 = Buffer.from(config.KIRO_OAUTH_CREDS_BASE64_2, 'base64').toString('utf8');
+                const parsedCreds2 = JSON.parse(decodedCreds2);
+                this.base64Creds_2 = parsedCreds2;
+                console.info('[Kiro] Successfully decoded Base64 credentials #2 in constructor.');
+            } catch (error) {
+                console.error(`[Kiro] Failed to parse Base64 credentials #2 in constructor: ${error.message}`);
+            }
         }
 
         this.modelName = KIRO_CONSTANTS.DEFAULT_MODEL_NAME;
@@ -337,11 +354,17 @@ async initializeAuth(forceRefresh = false) {
         let mergedCredentials = {};
 
         // Priority 1: Load from Base64 credentials if available
-        if (this.base64Creds) {
-            Object.assign(mergedCredentials, this.base64Creds);
-            console.info('[Kiro Auth] Successfully loaded credentials from Base64 (constructor).');
+        // Select credentials based on currentCredIndex
+        const selectedBase64Creds = this.currentCredIndex === 0 ? this.base64Creds : this.base64Creds_2;
+        if (selectedBase64Creds) {
+            Object.assign(mergedCredentials, selectedBase64Creds);
+            console.info(`[Kiro Auth] Successfully loaded credentials from Base64 (account #${this.currentCredIndex + 1}).`);
             // Clear base64Creds after use to prevent re-processing
-            this.base64Creds = null;
+            if (this.currentCredIndex === 0) {
+                this.base64Creds = null;
+            } else {
+                this.base64Creds_2 = null;
+            }
         }
 
         // Priority 2 & 3 合并: 从指定文件路径或目录加载凭证
@@ -456,6 +479,49 @@ async initializeAuth(forceRefresh = false) {
         throw new Error('No access token available after initialization and refresh attempts.');
     }
 }
+
+    /**
+     * Switches to the fallback credential if available
+     * @returns {boolean} True if switched successfully, false if no fallback available
+     */
+    switchCredentials() {
+        if (this.credsBase64_2 && this.currentCredIndex === 0) {
+            console.log('[Kiro] Switching to fallback credential (account #2)...');
+            this.currentCredIndex = 1;
+            // Reset credentials to force reload
+            this.accessToken = null;
+            this.refreshToken = null;
+            // Restore base64Creds_2 for reloading
+            if (this.config.KIRO_OAUTH_CREDS_BASE64_2) {
+                try {
+                    const decodedCreds2 = Buffer.from(this.config.KIRO_OAUTH_CREDS_BASE64_2, 'base64').toString('utf8');
+                    this.base64Creds_2 = JSON.parse(decodedCreds2);
+                } catch (error) {
+                    console.error(`[Kiro] Failed to reload Base64 credentials #2: ${error.message}`);
+                    return false;
+                }
+            }
+            return true;
+        } else if (this.credsBase64 && this.currentCredIndex === 1) {
+            console.log('[Kiro] Switching back to primary credential (account #1)...');
+            this.currentCredIndex = 0;
+            // Reset credentials to force reload
+            this.accessToken = null;
+            this.refreshToken = null;
+            // Restore base64Creds for reloading
+            if (this.config.KIRO_OAUTH_CREDS_BASE64) {
+                try {
+                    const decodedCreds = Buffer.from(this.config.KIRO_OAUTH_CREDS_BASE64, 'base64').toString('utf8');
+                    this.base64Creds = JSON.parse(decodedCreds);
+                } catch (error) {
+                    console.error(`[Kiro] Failed to reload Base64 credentials #1: ${error.message}`);
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
 
     /**
      * Extract text content from OpenAI message format
@@ -841,21 +907,48 @@ async initializeAuth(forceRefresh = false) {
             const response = await this.axiosInstance.post(requestUrl, requestData, { headers });
             return response;
         } catch (error) {
-            if (error.response?.status === 403 && !isRetry) {
-                console.log('[Kiro] Received 403. Attempting token refresh and retrying...');
+            // Handle 401/403 with credential switching or token refresh
+            if ((error.response?.status === 401 || error.response?.status === 403) && !isRetry) {
+                console.log(`[Kiro] Received ${error.response.status}. Attempting credential switch or token refresh...`);
+
+                // Try switching to fallback credential first
+                if (this.switchCredentials()) {
+                    try {
+                        await this.initializeAuth(true); // Force refresh with new credentials
+                        return this.callApi(method, model, body, true, retryCount);
+                    } catch (switchError) {
+                        console.error('[Kiro] Fallback credential also failed:', switchError.message);
+                    }
+                }
+
+                // If no fallback or fallback failed, try refreshing current token
                 try {
                     await this.initializeAuth(true); // Force refresh token
                     return this.callApi(method, model, body, true, retryCount);
                 } catch (refreshError) {
-                    console.error('[Kiro] Token refresh failed during 403 retry:', refreshError.message);
+                    console.error('[Kiro] Token refresh failed during auth retry:', refreshError.message);
                     throw refreshError;
                 }
             }
 
-            // Handle 429 (Too Many Requests) with exponential backoff
+            // Handle 429 (Too Many Requests) with credential switching or exponential backoff
             if (error.response?.status === 429 && retryCount < maxRetries) {
+                console.log(`[Kiro] Received 429 (Too Many Requests / Quota Exhausted).`);
+
+                // Try switching to fallback credential
+                if (this.switchCredentials()) {
+                    try {
+                        console.log('[Kiro] Retrying with fallback credential...');
+                        await this.initializeAuth(true);
+                        return this.callApi(method, model, body, false, 0); // Reset retry count for new credential
+                    } catch (switchError) {
+                        console.error('[Kiro] Fallback credential also failed:', switchError.message);
+                    }
+                }
+
+                // If no fallback, use exponential backoff
                 const delay = baseDelay * Math.pow(2, retryCount);
-                console.log(`[Kiro] Received 429 (Too Many Requests). Retrying in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+                console.log(`[Kiro] Retrying in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 return this.callApi(method, model, body, isRetry, retryCount + 1);
             }

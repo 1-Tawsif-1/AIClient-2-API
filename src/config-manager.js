@@ -74,6 +74,7 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
             GEMINI_OAUTH_CREDS_BASE64: process.env.GEMINI_OAUTH_CREDS_BASE64 || null,
             GEMINI_OAUTH_CREDS_FILE_PATH: process.env.GEMINI_OAUTH_CREDS_FILE_PATH || null,
             KIRO_OAUTH_CREDS_BASE64: process.env.KIRO_OAUTH_CREDS_BASE64 || null,
+            KIRO_OAUTH_CREDS_BASE64_2: process.env.KIRO_OAUTH_CREDS_BASE64_2 || null,
             KIRO_OAUTH_CREDS_FILE_PATH: process.env.KIRO_OAUTH_CREDS_FILE_PATH || null,
             QWEN_OAUTH_CREDS_FILE_PATH: process.env.QWEN_OAUTH_CREDS_FILE_PATH || null,
             PROJECT_ID: process.env.PROJECT_ID || null,
@@ -216,6 +217,13 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
                 i++;
             } else {
                 console.warn(`[Config Warning] --kiro-oauth-creds-base64 flag requires a value.`);
+            }
+        } else if (args[i] === '--kiro-oauth-creds-base64-2') {
+            if (i + 1 < args.length) {
+                currentConfig.KIRO_OAUTH_CREDS_BASE64_2 = args[i + 1];
+                i++;
+            } else {
+                console.warn(`[Config Warning] --kiro-oauth-creds-base64-2 flag requires a value.`);
             }
         } else if (args[i] === '--kiro-oauth-creds-file') {
             if (i + 1 < args.length) {
@@ -361,6 +369,9 @@ export function logProviderSpecificDetails(provider, config) {
                 console.log(`  [claude-kiro-oauth] OAuth Creds File Path: ${config.KIRO_OAUTH_CREDS_FILE_PATH}`);
             } else if (config.KIRO_OAUTH_CREDS_BASE64) {
                 console.log(`  [claude-kiro-oauth] OAuth Creds Source: Provided via Base64 string`);
+                if (config.KIRO_OAUTH_CREDS_BASE64_2) {
+                    console.log(`  [claude-kiro-oauth] OAuth Creds Fallback: Base64 string #2 configured`);
+                }
             } else {
                 console.log(`  [claude-kiro-oauth] OAuth Creds: Default`);
             }

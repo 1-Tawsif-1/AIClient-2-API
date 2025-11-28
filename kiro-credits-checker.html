@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kiro Credits Checker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .input-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results {
+            margin-top: 30px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            display: none;
+        }
+
+        .results.show {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-label {
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .result-value {
+            color: #333;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .percentage-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-top: 10px;
+            position: relative;
+        }
+
+        .percentage-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .percentage-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #333;
+            font-weight: 600;
+            font-size: 12px;
+            z-index: 1;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .account-info {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .account-info-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .account-info-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .account-label {
+            color: #555;
+            font-size: 13px;
+        }
+
+        .account-value {
+            color: #333;
+            font-weight: 600;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Kiro Credits Checker</h1>
+        <p class="subtitle">Paste your Kiro auth credentials to check credit usage</p>
+
+        <div class="input-group">
+            <label for="credentials">Base64 Encoded Credentials:</label>
+            <textarea
+                id="credentials"
+                placeholder="Paste your KIRO_OAUTH_CREDS_BASE64 here..."
+            ></textarea>
+        </div>
+
+        <button id="checkBtn" onclick="checkCredits()">Check Credits</button>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Fetching credit information...</p>
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <div class="results" id="results">
+            <div class="account-info" id="accountInfo"></div>
+
+            <div class="result-item">
+                <span class="result-label">Total Credits</span>
+                <span class="result-value" id="totalCredits">-</span>
+            </div>
+
+            <div class="result-item">
+                <span class="result-label">Used Credits</span>
+                <span class="result-value" id="usedCredits">-</span>
+            </div>
+
+            <div class="result-item">
+                <span class="result-label">Credits Left</span>
+                <span class="result-value" id="creditsLeft">-</span>
+            </div>
+
+            <div class="result-item">
+                <span class="result-label">Usage</span>
+                <div style="width: 100%; margin-top: 10px;">
+                    <div class="percentage-bar">
+                        <div class="percentage-fill" id="percentageFill"></div>
+                        <div class="percentage-text" id="percentageText">0%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function checkCredits() {
+            const credentialsInput = document.getElementById('credentials');
+            const checkBtn = document.getElementById('checkBtn');
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const results = document.getElementById('results');
+
+            // Hide previous results
+            results.classList.remove('show');
+            error.classList.remove('show');
+
+            // Get credentials
+            const base64Creds = credentialsInput.value.trim();
+            if (!base64Creds) {
+                showError('Please paste your credentials');
+                return;
+            }
+
+            // Disable button and show loading
+            checkBtn.disabled = true;
+            loading.classList.add('show');
+
+            try {
+                // Decode base64
+                const decodedStr = atob(base64Creds);
+                const creds = JSON.parse(decodedStr);
+
+                if (!creds.accessToken || !creds.region) {
+                    throw new Error('Invalid credentials format');
+                }
+
+                // Get MAC address SHA256 (using a dummy value for browser)
+                const macSha256 = '0000000000000000000000000000000000000000000000000000000000000000';
+
+                // Fetch user info from Kiro API
+                const region = creds.region || 'us-east-1';
+                const url = `https://codewhisperer.${region}.amazonaws.com/getUserUsage`;
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${creds.accessToken}`,
+                        'x-amz-user-agent': `aws-sdk-js/1.0.7 KiroIDE-0.1.25-${macSha256}`,
+                        'user-agent': `aws-sdk-js/1.0.7 ua/2.1 os/win32#10.0.26100 lang/js md/nodejs#20.16.0 api/codewhispererstreaming#1.0.7 m/E KiroIDE-0.1.25-${macSha256}`,
+                        'amz-sdk-request': 'attempt=1; max=1',
+                        'x-amzn-kiro-agent-mode': 'vibe',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                // Display account info
+                displayAccountInfo(creds);
+
+                // Calculate and display credits
+                const totalCredits = 500; // Kiro free tier
+                const usedCredits = data.usedCredits || 0;
+                const creditsLeft = totalCredits - usedCredits;
+                const percentage = (usedCredits / totalCredits * 100).toFixed(1);
+
+                document.getElementById('totalCredits').textContent = totalCredits;
+                document.getElementById('usedCredits').textContent = usedCredits;
+                document.getElementById('creditsLeft').textContent = creditsLeft;
+                document.getElementById('percentageFill').style.width = percentage + '%';
+                document.getElementById('percentageText').textContent = percentage + '%';
+                document.getElementById('percentageFill').textContent = percentage >= 10 ? percentage + '%' : '';
+
+                // Show results
+                loading.classList.remove('show');
+                results.classList.add('show');
+                checkBtn.disabled = false;
+
+            } catch (err) {
+                console.error('Error:', err);
+                loading.classList.remove('show');
+                checkBtn.disabled = false;
+                showError('Failed to fetch credits: ' + err.message);
+            }
+        }
+
+        function displayAccountInfo(creds) {
+            const accountInfo = document.getElementById('accountInfo');
+            const expiryDate = new Date(creds.expiresAt);
+            const now = new Date();
+            const isExpired = expiryDate < now;
+
+            accountInfo.innerHTML = `
+                <div class="account-info-item">
+                    <span class="account-label">Provider:</span>
+                    <span class="account-value">${creds.provider || 'Unknown'}</span>
+                </div>
+                <div class="account-info-item">
+                    <span class="account-label">Region:</span>
+                    <span class="account-value">${creds.region || 'us-east-1'}</span>
+                </div>
+                <div class="account-info-item">
+                    <span class="account-label">Auth Method:</span>
+                    <span class="account-value">${creds.authMethod || 'social'}</span>
+                </div>
+                <div class="account-info-item">
+                    <span class="account-label">Token Expires:</span>
+                    <span class="account-value" style="color: ${isExpired ? '#c33' : '#3c3'}">
+                        ${expiryDate.toLocaleString()} ${isExpired ? '(Expired)' : ''}
+                    </span>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            const error = document.getElementById('error');
+            error.textContent = message;
+            error.classList.add('show');
+        }
+
+        // Allow Enter key to submit
+        document.getElementById('credentials').addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                checkCredits();
+            }
+        });
+    </script>
+</body>
+</html>
