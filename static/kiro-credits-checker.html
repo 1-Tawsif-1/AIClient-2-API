@@ -361,7 +361,8 @@
                 console.error('Error:', err);
                 loading.classList.remove('show');
                 checkBtn.disabled = false;
-                showError('Failed to fetch credits: ' + err.message);
+                const errorMessage = typeof err === 'object' ? (err.message || JSON.stringify(err)) : String(err);
+                showError('Failed to fetch credits: ' + errorMessage);
             }
         }
 

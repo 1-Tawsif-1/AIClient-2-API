@@ -87,11 +87,22 @@ export function createRequestHandler(config, providerPoolManager) {
                         const decodedStr = Buffer.from(base64Creds, 'base64').toString('utf8');
                         const creds = JSON.parse(decodedStr);
 
-                        if (!creds.accessToken || !creds.region) {
+                        if (!creds.accessToken) {
                             res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-                            res.end(JSON.stringify({ error: 'Invalid credentials format' }));
+                            res.end(JSON.stringify({ error: 'Invalid credentials: missing accessToken' }));
                             return;
                         }
+
+                        // Extract region from profileArn or use default
+                        let region = creds.region;
+                        if (!region && creds.profileArn) {
+                            // Extract region from arn:aws:codewhisperer:us-east-1:...
+                            const arnParts = creds.profileArn.split(':');
+                            if (arnParts.length >= 4) {
+                                region = arnParts[3];
+                            }
+                        }
+                        region = region || 'us-east-1';
 
                         // Import axios dynamically
                         const axios = (await import('axios')).default;
@@ -115,7 +126,6 @@ export function createRequestHandler(config, providerPoolManager) {
                         const macSha256 = crypto.createHash('sha256').update(macAddress).digest('hex');
 
                         // Call Kiro API
-                        const region = creds.region || 'us-east-1';
                         const url = `https://codewhisperer.${region}.amazonaws.com/getUserUsage`;
 
                         const response = await axios.post(url, {}, {
@@ -138,7 +148,7 @@ export function createRequestHandler(config, providerPoolManager) {
                             creditsLeft: 500 - (response.data.usedCredits || 0),
                             accountInfo: {
                                 provider: creds.provider || 'Unknown',
-                                region: creds.region || 'us-east-1',
+                                region: region,
                                 authMethod: creds.authMethod || 'social',
                                 expiresAt: creds.expiresAt
                             }
