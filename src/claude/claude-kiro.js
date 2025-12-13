@@ -21,10 +21,17 @@ const KIRO_CONSTANTS = {
 };
 
 const MODEL_MAPPING = {
+    // Opus models
+    "claude-opus-4-5": "CLAUDE_OPUS_4_5_20251101_V1_0",
+    "claude-opus-4-5-20251101": "CLAUDE_OPUS_4_5_20251101_V1_0",
+    "claude-opus-4-20250514": "CLAUDE_OPUS_4_20250514_V1_0",
+    "claude-3-opus-20240229": "CLAUDE_3_OPUS_20240229_V1_0",
+    // Sonnet models
     "claude-sonnet-4-5": "CLAUDE_SONNET_4_5_20250929_V1_0",
     "claude-sonnet-4-5-20250929": "CLAUDE_SONNET_4_5_20250929_V1_0",
     "claude-sonnet-4-20250514": "CLAUDE_SONNET_4_20250514_V1_0",
     "claude-3-7-sonnet-20250219": "CLAUDE_3_7_SONNET_20250219_V1_0",
+    // Amazon Q variants
     "amazonq-claude-sonnet-4-20250514": "CLAUDE_SONNET_4_20250514_V1_0",
     "amazonq-claude-3-7-sonnet-20250219": "CLAUDE_3_7_SONNET_20250219_V1_0"
 };
@@ -560,14 +567,14 @@ async initializeAuth(forceRefresh = false) {
         }
         if (Array.isArray(message) ) {
             return message
-                .filter(part => part.type === 'text' && part.text)
+                .filter(part => part && part.type === 'text' && part.text)
                 .map(part => part.text)
                 .join('');
         } else if (typeof message.content === 'string') {
             return message.content;
         } else if (Array.isArray(message.content) ) {
             return message.content
-                .filter(part => part.type === 'text' && part.text)
+                .filter(part => part && part.type === 'text' && part.text)
                 .map(part => part.text)
                 .join('');
         } 
@@ -609,8 +616,13 @@ async initializeAuth(forceRefresh = false) {
 
     /**
      * Build CodeWhisperer request from OpenAI messages
+     * @param {Array} messages - Array of messages
+     * @param {string} model - Model name
+     * @param {Array} tools - Array of tools
+     * @param {string} inSystemPrompt - System prompt
+     * @param {Object} thinking - Thinking configuration { type: "enabled", budget_tokens: number }
      */
-    buildCodewhispererRequest(messages, model, tools = null, inSystemPrompt = null) {
+    buildCodewhispererRequest(messages, model, tools = null, inSystemPrompt = null, thinking = null) {
         const conversationId = uuidv4();
         
         let systemPrompt = this.getContentText(inSystemPrompt);
@@ -694,6 +706,7 @@ async initializeAuth(forceRefresh = false) {
                     const userInputMessageContext = {};
 
                     for (const part of message.content) {
+                        if (!part) continue;
                         if (part.type === 'text') {
                             userInputMessage.content += part.text;
                         } else if (part.type === 'tool_result') {
@@ -736,6 +749,7 @@ async initializeAuth(forceRefresh = false) {
 
                 if (Array.isArray(message.content)) {
                     for (const part of message.content) {
+                        if (!part) continue;
                         if (part.type === 'text') {
                             assistantResponseMessage.content += part.text;
                         } else if (part.type === 'tool_use') {
@@ -768,6 +782,7 @@ async initializeAuth(forceRefresh = false) {
 
         if (Array.isArray(currentMessage.content)) {
             for (const part of currentMessage.content) {
+                if (!part) continue;
                 if (part.type === 'text') {
                     currentContent += part.text;
                 } else if (part.type === 'tool_result') {
@@ -851,6 +866,17 @@ async initializeAuth(forceRefresh = false) {
         if (this.authMethod === KIRO_CONSTANTS.AUTH_METHOD_SOCIAL) {
             request.profileArn = this.profileArn;
         }
+
+        // Add extended thinking configuration if enabled
+        if (thinking && thinking.type === 'enabled') {
+            request.conversationState.thinkingConfig = {
+                enabled: true
+            };
+            if (thinking.budget_tokens) {
+                request.conversationState.thinkingConfig.budgetTokens = thinking.budget_tokens;
+            }
+            console.log(`[Kiro] Extended thinking enabled with budget: ${thinking.budget_tokens || 'default'}`);
+        }
         
         return request;
     }
@@ -858,6 +884,7 @@ async initializeAuth(forceRefresh = false) {
     parseEventStreamChunk(rawData) {
         const rawStr = Buffer.isBuffer(rawData) ? rawData.toString('utf8') : String(rawData);
         let fullContent = '';
+        let thinkingContent = '';
         const toolCalls = [];
         let currentToolCallDict = null;
         // console.log(`rawStr=${rawStr}`);
@@ -888,8 +915,14 @@ async initializeAuth(forceRefresh = false) {
                 try {
                     const eventData = JSON.parse(jsonCandidate);
 
+                    // Handle thinking/reasoning content
+                    if (eventData.thinking || eventData.reasoningContent || eventData.type === 'thinking') {
+                        let thinkingText = eventData.thinking || eventData.reasoningContent || eventData.content || '';
+                        thinkingText = thinkingText.replace(/(?<!\\)\\n/g, '\n');
+                        thinkingContent += thinkingText;
+                    }
                     // 优先处理结构化工具调用事件
-                    if (eventData.name && eventData.toolUseId) {
+                    else if (eventData.name && eventData.toolUseId) {
                         if (!currentToolCallDict) {
                             currentToolCallDict = {
                                 id: eventData.toolUseId,
@@ -951,7 +984,7 @@ async initializeAuth(forceRefresh = false) {
         }
 
         const uniqueToolCalls = deduplicateToolCalls(toolCalls);
-        return { content: fullContent || '', toolCalls: uniqueToolCalls };
+        return { content: fullContent || '', toolCalls: uniqueToolCalls, thinking: thinkingContent || null };
     }
  
 
@@ -965,7 +998,7 @@ async initializeAuth(forceRefresh = false) {
             this._rotationStartIndex = undefined;
         }
 
-        const requestData = this.buildCodewhispererRequest(body.messages, model, body.tools, body.system);
+        const requestData = this.buildCodewhispererRequest(body.messages, model, body.tools, body.system, body.thinking);
 
         // Log the request for debugging
         console.log('[Kiro] Request to CodeWhisperer:', JSON.stringify(requestData, null, 2));
@@ -1052,6 +1085,7 @@ async initializeAuth(forceRefresh = false) {
         const parsedFromEvents = this.parseEventStreamChunk(rawResponseText);
         let fullResponseText = parsedFromEvents.content;
         let allToolCalls = [...parsedFromEvents.toolCalls]; // clone
+        const thinkingContent = parsedFromEvents.thinking;
         //console.log(`[Kiro] Found ${allToolCalls.length} tool calls from event stream parsing.`);
 
         // 2. Crucial fix from Python example: Parse bracket tool calls from the original raw response
@@ -1080,7 +1114,10 @@ async initializeAuth(forceRefresh = false) {
         
         //console.log(`[Kiro] Final response text after tool call cleanup: ${fullResponseText}`);
         //console.log(`[Kiro] Final tool calls after deduplication: ${JSON.stringify(uniqueToolCalls)}`);
-        return { responseText: fullResponseText, toolCalls: uniqueToolCalls };
+        if (thinkingContent) {
+            console.log(`[Kiro] Thinking content received: ${thinkingContent.substring(0, 100)}...`);
+        }
+        return { responseText: fullResponseText, toolCalls: uniqueToolCalls, thinking: thinkingContent };
     }
 
     async generateContent(model, requestBody) {
@@ -1097,8 +1134,8 @@ async initializeAuth(forceRefresh = false) {
         const response = await this.callApi('', finalModel, requestBody);
 
         try {
-            const { responseText, toolCalls } = this._processApiResponse(response);
-            return this.buildClaudeResponse(responseText, false, 'assistant', model, toolCalls);
+            const { responseText, toolCalls, thinking } = this._processApiResponse(response);
+            return this.buildClaudeResponse(responseText, false, 'assistant', model, toolCalls, thinking);
         } catch (error) {
             console.error('[Kiro] Error in generateContent:', error);
             throw new Error(`Error processing response: ${error.message}`);
@@ -1149,11 +1186,11 @@ async initializeAuth(forceRefresh = false) {
         
         try {
             const response = await this.streamApi('', finalModel, requestBody);
-            const { responseText, toolCalls } = this._processApiResponse(response);
+            const { responseText, toolCalls, thinking } = this._processApiResponse(response);
 
-            // Pass both responseText and toolCalls to buildClaudeResponse
+            // Pass both responseText, toolCalls and thinking to buildClaudeResponse
             // buildClaudeResponse will handle the logic of combining them into a single stream
-            for (const chunkJson of this.buildClaudeResponse(responseText, true, 'assistant', model, toolCalls)) {
+            for (const chunkJson of this.buildClaudeResponse(responseText, true, 'assistant', model, toolCalls, thinking)) {
                 yield chunkJson;
             }
         } catch (error) {
@@ -1169,8 +1206,14 @@ async initializeAuth(forceRefresh = false) {
 
     /**
      * Build Claude compatible response object
+     * @param {string} content - Text content
+     * @param {boolean} isStream - Whether this is a streaming response
+     * @param {string} role - Message role
+     * @param {string} model - Model name
+     * @param {Array} toolCalls - Array of tool calls
+     * @param {string} thinking - Thinking/reasoning content for extended thinking
      */
-    buildClaudeResponse(content, isStream = false, role = 'assistant', model, toolCalls = null) {
+    buildClaudeResponse(content, isStream = false, role = 'assistant', model, toolCalls = null, thinking = null) {
         const messageId = `${uuidv4()}`;
         // Helper to estimate tokens (simple heuristic)
         const estimateTokens = (text) => Math.ceil((text || '').length / 4);
@@ -1198,10 +1241,40 @@ async initializeAuth(forceRefresh = false) {
  
             let totalOutputTokens = 0;
             let stopReason = "end_turn";
+            let currentBlockIndex = 0;
+
+            // Add thinking content block first (if present)
+            if (thinking) {
+                // content_block_start for thinking
+                events.push({
+                    type: "content_block_start",
+                    index: currentBlockIndex,
+                    content_block: {
+                        type: "thinking",
+                        thinking: ""
+                    }
+                });
+                // content_block_delta for thinking
+                events.push({
+                    type: "content_block_delta",
+                    index: currentBlockIndex,
+                    delta: {
+                        type: "thinking_delta",
+                        thinking: thinking
+                    }
+                });
+                // content_block_stop for thinking
+                events.push({
+                    type: "content_block_stop",
+                    index: currentBlockIndex
+                });
+                totalOutputTokens += estimateTokens(thinking);
+                currentBlockIndex++;
+            }
 
             if (content) {
-                // If there are tool calls AND content, the content block index should be after tool calls
-                const contentBlockIndex = (toolCalls && toolCalls.length > 0) ? toolCalls.length : 0;
+                // Calculate content block index (after thinking and tool calls)
+                const contentBlockIndex = currentBlockIndex + ((toolCalls && toolCalls.length > 0) ? toolCalls.length : 0);
 
                 // 2. content_block_start for text
                 events.push({
@@ -1246,10 +1319,12 @@ async initializeAuth(forceRefresh = false) {
                         // since Claude's `input` field expects an object.
                         inputObject = { "raw_arguments": tc.function.arguments };
                     }
+                    // Adjust index to account for thinking block
+                    const toolBlockIndex = currentBlockIndex + index;
                     // 2. content_block_start for each tool_use
                     events.push({
                         type: "content_block_start",
-                        index: index,
+                        index: toolBlockIndex,
                         content_block: {
                             type: "tool_use",
                             id: tc.id,
@@ -1262,7 +1337,7 @@ async initializeAuth(forceRefresh = false) {
                     // Since Kiro is not truly streaming, we send the full arguments as one delta.
                     events.push({
                         type: "content_block_delta",
-                        index: index,
+                        index: toolBlockIndex,
                         delta: {
                             type: "input_json_delta",
                             partial_json: inputObject
@@ -1272,7 +1347,7 @@ async initializeAuth(forceRefresh = false) {
                     // 4. content_block_stop for each tool_use
                     events.push({
                         type: "content_block_stop",
-                        index: index
+                        index: toolBlockIndex
                     });
                     totalOutputTokens += estimateTokens(JSON.stringify(inputObject));
                 });
@@ -1301,6 +1376,15 @@ async initializeAuth(forceRefresh = false) {
             let stopReason = "end_turn";
             let outputTokens = 0;
 
+            // Add thinking content first (if present)
+            if (thinking) {
+                contentArray.push({
+                    type: "thinking",
+                    thinking: thinking
+                });
+                outputTokens += estimateTokens(thinking);
+            }
+
             if (toolCalls && toolCalls.length > 0) {
                 for (const tc of toolCalls) {
                     let inputObject;
@@ -1322,7 +1406,10 @@ async initializeAuth(forceRefresh = false) {
                     outputTokens += estimateTokens(tc.function.arguments);
                 }
                 stopReason = "tool_use"; // Set stop_reason to "tool_use" when toolCalls exist
-            } else if (content) {
+            }
+            
+            // Add text content (can coexist with thinking and tool_use)
+            if (content) {
                 contentArray.push({
                     type: "text",
                     text: content
