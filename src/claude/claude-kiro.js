@@ -490,12 +490,18 @@ async initializeAuth(forceRefresh = false) {
 
     /**
      * Switches to the next available credential in rotation
-     * @returns {boolean} True if switched successfully, false if no more credentials available
+     * @param {boolean} resetRotationTracker - If true, resets the rotation start tracker
+     * @returns {boolean} True if switched successfully, false if no more credentials available or full rotation completed
      */
-    switchCredentials() {
+    switchCredentials(resetRotationTracker = false) {
         if (this.credentialsList.length <= 1) {
             console.log('[Kiro] No additional credentials available for rotation');
             return false;
+        }
+
+        // Track rotation start to prevent infinite loops
+        if (resetRotationTracker || this._rotationStartIndex === undefined) {
+            this._rotationStartIndex = this.currentCredIndex;
         }
 
         const previousIndex = this.currentCredIndex;
@@ -503,6 +509,14 @@ async initializeAuth(forceRefresh = false) {
 
         // Move to next credential (circular rotation)
         this.currentCredIndex = (this.currentCredIndex + 1) % this.credentialsList.length;
+        
+        // Check if we've completed a full rotation
+        if (this.currentCredIndex === this._rotationStartIndex) {
+            console.log('[Kiro] Full credential rotation completed - all credentials tried');
+            this._rotationStartIndex = undefined; // Reset for next rotation cycle
+            return false;
+        }
+
         const newCred = this._getCurrentCredential();
 
         console.log(`[Kiro] Switching credentials: #${previousCred?.index || 'N/A'} -> #${newCred?.index || 'N/A'} (${this.currentCredIndex + 1}/${this.credentialsList.length})`);
@@ -561,6 +575,39 @@ async initializeAuth(forceRefresh = false) {
     }
 
     /**
+     * Clean JSON schema by removing unsupported properties
+     * Kiro/CodeWhisperer only supports basic JSON schema properties
+     */
+    _cleanJsonSchema(schema) {
+        if (!schema || typeof schema !== 'object') {
+            return schema;
+        }
+
+        // Only keep supported properties
+        const supportedProps = ['type', 'description', 'properties', 'required', 'enum', 'items', 'default', 'minimum', 'maximum', 'minLength', 'maxLength', 'pattern'];
+        const cleaned = {};
+
+        for (const [key, value] of Object.entries(schema)) {
+            if (supportedProps.includes(key)) {
+                if (key === 'properties' && typeof value === 'object') {
+                    // Recursively clean nested properties
+                    cleaned.properties = {};
+                    for (const [propName, propSchema] of Object.entries(value)) {
+                        cleaned.properties[propName] = this._cleanJsonSchema(propSchema);
+                    }
+                } else if (key === 'items' && typeof value === 'object') {
+                    // Recursively clean array items schema
+                    cleaned.items = this._cleanJsonSchema(value);
+                } else {
+                    cleaned[key] = value;
+                }
+            }
+        }
+
+        return cleaned;
+    }
+
+    /**
      * Build CodeWhisperer request from OpenAI messages
      */
     buildCodewhispererRequest(messages, model, tools = null, inSystemPrompt = null) {
@@ -580,13 +627,22 @@ async initializeAuth(forceRefresh = false) {
             // Filter out invalid tools and map valid ones
             const validTools = tools
                 .filter(tool => tool && tool.name && typeof tool.name === 'string')
-                .map(tool => ({
-                    toolSpecification: {
-                        name: tool.name,
-                        description: tool.description || "",
-                        inputSchema: { json: tool.input_schema || { type: "object", properties: {} } }
+                .map(tool => {
+                    // Clean the input schema - remove unsupported properties
+                    let cleanedSchema = tool.input_schema || { type: "object", properties: {} };
+                    if (cleanedSchema && typeof cleanedSchema === 'object') {
+                        // Remove $schema and other unsupported top-level properties
+                        const { $schema, $id, $ref, $defs, definitions, ...rest } = cleanedSchema;
+                        cleanedSchema = this._cleanJsonSchema(rest);
                     }
-                }));
+                    return {
+                        toolSpecification: {
+                            name: tool.name,
+                            description: tool.description || "",
+                            inputSchema: { json: cleanedSchema }
+                        }
+                    };
+                });
 
             // Only create toolsContext if there are valid tools
             if (validTools.length > 0) {
@@ -904,6 +960,11 @@ async initializeAuth(forceRefresh = false) {
         const maxRetries = this.config.REQUEST_MAX_RETRIES || 3;
         const baseDelay = this.config.REQUEST_BASE_DELAY || 1000; // 1 second base delay
 
+        // Reset rotation tracker at the start of a new request (not a retry)
+        if (!isRetry && retryCount === 0) {
+            this._rotationStartIndex = undefined;
+        }
+
         const requestData = this.buildCodewhispererRequest(body.messages, model, body.tools, body.system);
 
         // Log the request for debugging
@@ -1062,7 +1123,25 @@ async initializeAuth(forceRefresh = false) {
         // 检查 token 是否即将过期,如果是则先刷新
         if (this.isExpiryDateNear()) {
             console.log('[Kiro] Token is near expiry, refreshing before generateContentStream request...');
-            await this.initializeAuth(true);
+            // Try to refresh with credential rotation on failure
+            let refreshSuccess = false;
+            const totalCreds = this.credentialsList.length;
+            let attempts = 0;
+            
+            while (!refreshSuccess && attempts < totalCreds) {
+                try {
+                    await this.initializeAuth(true);
+                    refreshSuccess = true;
+                } catch (refreshError) {
+                    console.error(`[Kiro] Token refresh failed for credential #${this.getCurrentCredentialNumber()}: ${refreshError.message}`);
+                    attempts++;
+                    if (attempts < totalCreds && this.switchCredentials()) {
+                        console.log(`[Kiro] Trying next credential (attempt ${attempts + 1}/${totalCreds})...`);
+                    } else if (attempts >= totalCreds) {
+                        throw new Error(`All ${totalCreds} credentials failed to refresh. Please update your credentials.`);
+                    }
+                }
+            }
         }
         
         const finalModel = MODEL_MAPPING[model] ? model : this.modelName;
